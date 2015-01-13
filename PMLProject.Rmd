@@ -1,28 +1,30 @@
 ---
-title: "MachineLearningProject"
+title: "Practical Machine Learning Course Project"
 author: "Pablo Arias"
 date: "Thursday, January 08, 2015"
 output: html_document
 ---
 
 ## Prompt
-With the data collected for the following paper [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf) by authors: *Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H.* as part of the Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013, found here:
+Analysis will be done of accelerometer data on the belt, forearm, arm, and dumbbell of 6 participants while they were asked to perform dumbbell lifts correctly(A) and incorrectly(B-E) in 5 different ways, to generate a predictive model to detects what class (A-E) of exercise is being done.
 
-https://d396qusza40orc.cloudfront.net/predmachlearn
+The analysis will be done with the data collected for the following paper [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf) by authors: *Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H.* as part of the Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013, found here:
 
-[Read more here](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3OGWAH4vG>)
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
 
-Analysis of accelerometer data on the belt, forearm, arm, and dumbell of 6 participants while they were asked to perform barbell lifts correctly and incorrectly in 5 different ways, will be done, to generate a predictive model to detect what class (A-E) of exercise is being done.
+Read more about this paper [here](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz3OGWAH4vG>)
 
 ## Data Procesisng
 
-According to the [paper](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf), the data has measurements for 4 acceleremoter sensors: dumbbell, arm, forearm and belt. The measurements were taken with the sliding window approach with different lengths from 0.5 second to 2.5 seconds, with 0.5 second overlap. In each step of the sliding window the features were calculated for the Euler angles (roll, pitch, yaw), as well as the raw accelerometer, gyroscope and magnetometer readings. For the Euler angles of each of the four sensors eight features were calculated: mean, variance, standard deviation, max, min, amplitude, kurtosis and skewness. Two additional calculated features are present: The total acceleration for all the sensors and its variance, generating in total 38 features per sensor and two additional global features.
+According to the [paper](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf), the data has measurements for 4 accelerator sensors: dumbbell, arm, forearm and belt. The measurements were taken with the sliding window approach with different lengths from 0.5 second to 2.5 seconds, with 0.5 second overlap. In each step of the sliding window the features were calculated for the Euler angles (roll, pitch, yaw), as well as the raw accelerometer, gyroscope and magnetometer readings. For the Euler angles of each of the four sensors eight features were calculated: mean, variance, standard deviation, max, min, amplitude, kurtosis and skewness. Two additional calculated features are present: The total acceleration for all the sensors and its variance, generating in total 38 features per sensor and two additional global features.
 
 ### Data completeness
 
-Since we are building a predictor that needs to be validated against a predifined test set, the test set should include values for our predictors. It seems that because the calculation for some features was done at the end of a window the testing sample does not contain these features, so they will not be used as predictors. These features are: kurtosis, skewness, max, min, amplitude, mean, standard deviation, variance and the variance of total acceleration. 
+Since we are building a predictor that needs to be validated against a predefined test set, the test set should include values for our predictors. It seems that because the calculation for some features was done at the end of a sampling window, the testing sample does not contain these features, so they will not be used as predictors. These features are: kurtosis, skewness, max, min, amplitude, mean, standard deviation, variance and the variance of total acceleration. 
 
-```{r}
+```{r loaddata, results="hide", cache=FALSE}
+
 library(caret)
 library(ggplot2)
  
@@ -38,51 +40,52 @@ test_dat <- test_dat[, grep("user_name|_belt|_arm|_forearm|_dumbbell", names(tes
 train_dat <- train_dat[, grep("user_name|_belt|_arm|_forearm|_dumbbell|class", names(train_dat))]
 ```
 
-
-We end up with 13 variables for each sensor. These are the ones for the belt sensor as an example
-```{r}
+We end up with 13 variables for each sensor. These are the ones for the belt sensor as an example:
+```{r features}
 names(train_dat)[grep("_belt", names(train_dat))]
 ```
 
-## Preprocessing
+### Preprocessing
 
 We can do a quick near zero covariates check on our training set
-```{r cache=TRUE}
+```{r nearzerovar, cache=TRUE}
 nZV <- nearZeroVar(train_dat, saveMetrics=TRUE)
 any(nZV$nzv)
 ```
-There are no features with near zero variability, so no need to eliminate for this reason.
+There are no features with near zero variability, so no need to eliminate any feature for this reason.
 
-We can also check the frequency distribution of the outcome variable to make sure that we have an even distribution among all the classification groups
+We can also check the frequency distribution of the outcome variable to make sure that we have an even distribution among all the classification groups and a good representation among the 6 users that participated in the study.
 
-```{r}
-plot(train_dat$classe, main = "Histogram of training samples accross Classes",
-     xlab = "Classes", ylab = "Frequency")
+```{r figure1, fig.height=6.5}
+table_dat <- table(train_dat$user_name,train_dat$classe)
+barplot(table_dat, main = "Histogram of training samples accross Classes",
+        xlab = "Classes", ylab = "Frequency", legend=TRUE)
 ```
 
-We can see we have sufficient distribution of samples accross classes
+We can see we have sufficient distribution of samples across classes
 
 ## Prediction Model Approach
 
-We will try three prediction approaches, crossvalidate and compare different attributes (training, prediction times and accuracy) of the models. 
+We will try three prediction approaches, cross-validate and compare different attributes (training, prediction times and accuracy) of the models. 
 
-1. A Random Forest model with all but *user_name* predictors. This model is expected to be  expencive in terms of training and prediction times because of the amount of predictors. We exclude *user_name* because we want the model to predict the class of exercise when the exercise is done by any user other than the 6 that participated in the research.
-2. Use the top 10 predictors from model 1 and fit a new Random Forest only with those predictors. This model will be worst in training time because (to be fair) it should include the training time of model 1 plus model 2 and most likely will be less accurate because it looses the contribution of the other predictors. It should predict faster.
-3. The third model will use the best model between model 1 and model 2 and include the *user_name* feature. This modle is expected to have a higher out of sample accuracy because the variability between 6 users can be used to better predict the outcome.
+1. A Random Forest model with all but *user_name* predictors. This model is expected to be  expensive in terms of training and prediction times because of the amount of predictors. We exclude *user_name* because we want the model to predict the class of exercise when the exercise is done by any user other than the 6 that participated in the research.
+2. Use the top 10 predictors from model 1 and fit a new Random Forest only with those predictors. This model will be worst in training time because (to be fair) it should include the training time of model 1 plus model 2 and most likely will be less accurate because it does not have the contribution of the other predictors. It should predict faster.
+3. The third model will use the best model between model 1 and model 2 and include the *user_name* feature. This model is expected to have a higher out of sample accuracy because the variability between 6 users can be used to better predict the outcome.
 
-We will split the traing data into three equilly sized sets for each of the three model, using random sampling. Each of these sets, will be split into a training (80%) and test(20%) sets.
+We will split the training data into three equally sized sets for each of the three models, using random sampling technique. Each of these sets, will be split into a training (80%) and test(20%) sets. 
 
-```{r cache=FALSE}
+```{r subsets, cache=FALSE}
 set.seed(211069)
-sub <- list()
-mod <- list()
-mod_train_time <- list()
-pred <- list()
-mod_pred_time <- list()
-confMat <- list()
-accuracy <- list()
-train <- list()
-test <- list()
+sub <- list()                   # List of three bid sub groups of data
+mod <- list()                   # List of the 3 models
+mod_train_time <- list()        # List of training times
+pred <- list()                  # List of 3 predicted data
+mod_pred_time <- list()         # List of the 3 prediction times
+confMat <- list()               # List of the three Confusion Matrices
+accuracy <- list()              # List of the three overall accuracy
+train <- list()                 # List of each of the train set
+test <- list()                  # List of each of the test sets
+confusion <- list()             # List of confusion matrix table for plotting
 
 sub_set_index <- createDataPartition(y=train_dat$classe, p=(1/3), list=FALSE)
 sub[[1]] <- train_dat[sub_set_index, -1] # Exclude user_name
@@ -90,7 +93,6 @@ rest <- train_dat[-sub_set_index, ]
 sub_set_index <- createDataPartition(y=rest$classe, p=.5, list=FALSE)
 sub[[2]] <- rest[sub_set_index, -1] # Exclude user_name
 sub[[3]] <- rest[-sub_set_index,]
-lapply(sub, dim)
 
 index <- createDataPartition(y=sub[[1]]$classe, p=.8, list=FALSE)
 train[[1]] <- sub[[1]][index,]
@@ -105,37 +107,44 @@ train[[3]] <- sub[[3]][index,]
 test[[3]] <-sub[[3]][-index,]
 
 ```
+We can verify the dimension of the three data sets
 
-Again we can check the frequency distribution of the outcome variable to make sure that we have an even distribution among all the classification groups for the three model training
+``` {r dimensions}
+lapply(sub, dim)
+lapply(train, dim)
+lapply(test, dim)
+```
 
-```{r}
+Again we can check the frequency distribution of the outcome variable to make sure that we have an even distribution among all the classification groups for the three model datasets
+
+```{r figure2}
 par(mfrow=c(1,3))
 
 plot(train[[1]]$classe, main = "Model 1",
      xlab = "Classes", ylab = "Frequency")
 plot(train[[2]]$classe, main = "Model 2",
      xlab = "Classes", ylab = "Frequency")
-plot(train[[3]]$classe, main = "Model 3",
+table_dat <- table(train[[3]]$user_name,train[[3]]$classe)
+barplot(table_dat, main = "Model 3",
      xlab = "Classes", ylab = "Frequency")
-
-
 ```
+
+The random samppling is doing its work, since the frequency remained the same across all sets.
 
 #### Random forest model with all but *user_name* predictors
 
-Train model one by splitting into a training a tets set. Use traiing set to train and test set to calculate out of smaple accuracy. Time to train the model and to predict will be measured. Will use an odd number of 3 for the k-fold of the random forest.
+Train model one by splitting into a training a test set. Use training set to train and test set to calculate out of sample accuracy. Time to train the model and to predict will be measured. Will use an odd number of 3 for the k-fold of the random forest.
 
-```{r cache=TRUE}
+```{r model1, cache=TRUE}
 set.seed(211069)
-mod_train_time[[1]] <- system.time(mod[[1]] <- train(classe ~ ., data=train[[1]], 
-                                           method="rf", 
+mod_train_time[[1]] <- system.time(mod[[1]] <- train(classe ~ ., data=train[[1]], method="rf", 
                                            trControl=trainControl(method = "cv", number = 3)))
 mod_train_time[[1]]
 
 ```
 
 We can now predict against the test set, show accuracy with test set and plot a confusion matrix
-```{r cache=TRUE}
+```{r prediction1, cache=TRUE}
 mod_pred_time[[1]] <- system.time(pred[[1]] <- predict(mod[[1]], newdata=test[[1]]))
 mod_pred_time[[1]]
 confMat[[1]] <- confusionMatrix(pred[[1]], test[[1]]$classe)
@@ -144,32 +153,32 @@ confMat[[1]]
 accuracy[[1]] <- confMat[[1]]$overall[1]
 accuracy[[1]]
 
-confusion <- as.data.frame(confMat[[1]]$table)
+confusion[[1]] <- as.data.frame(confMat[[1]]$table)
  
-p1 <- ggplot(confusion, aes(Reference, Prediction, group=Prediction)) +
+p1 <- ggplot(confusion[[1]], aes(Reference, Prediction, group=Prediction)) +
         ggtitle("Confusion Matrix Model 1") +
         geom_tile(aes(fill = Freq)) + 
-        geom_text(aes(fill = confusion$Freq, label = confusion$Freq)) +
+        geom_text(aes(fill = Freq, label = Freq)) +
         scale_fill_gradient(low = "white", high = "blue") 
 ```
 
-As expected the accuracy of the test set `r accuracy[[1]]` is high, but also are the training `r mod_train_time[[1]]` and prediction times `r mod_pred_time[[1]]`
+The accuracy of the out-of-sample set of `r round(accuracy[[1]],2)` is high. We will later compare the training and prediction times with the other models.
 
-The sensitivity and specificity for all the classes are really high. This seems to be a good predictor. We will evaluate later with the original out of sample test set.
+The out-of-sample sensitivity and specificity for all the classes are really high. This seems to be a good predictor.
 
-#### Random forest model with tope 10 predictor of model 1
+#### Random forest model with top 10 predictors from Model 1
 
 We can use `varImp()` function to select the top 10 predictors of model 1 and again build a prediction model with those parameters only. Need to define a function so I can measure the total prediction time including all the calculations.
 
 
-```{r cache=TRUE}
+```{r model2, cache=TRUE}
 
 set.seed(211069)
-        
+       
 model2func <- function() {
         varImplist <- varImp(mod[[1]])
         varlist <- head(sort(varImplist$importance[,1], decreasing=TRUE), 10)
-        newfeatures <- rownames(varImplist$importance)[head(order(varImplist$importance,
+        newfeatures <<- rownames(varImplist$importance)[head(order(varImplist$importance,
                                                                   decreasing = T), 10)]
         mod[[2]] <<- train(classe ~ ., data=train[[2]][, c(newfeatures, "classe")], 
                         method="rf", trControl=trainControl(method = "cv", number = 3))
@@ -179,10 +188,16 @@ mod_train_time[[2]] <- system.time(model2func())
 mod_train_time[[2]]
 ```
 
-We can see that this model trained much faster (`r mod_train_time[[2]]`) but it was done with the previous knowledge adquired on the first model so overall is slower for training. Let's see how it performs with the out of sample test.
+With only the top 10 predictors:
 
-```{r cache=TRUE}
-mod_pred_time[[2]] <- system.time(pred[[2]] <- predict(mod[[2]], newdata=test[[2]]))
+```{r topten}
+newfeatures
+```
+
+We can see that this model trained much faster (`r mod_train_time[[2]][3]`s) compared to model 1 (`r mod_train_time[[1]][3]`s) but it was done with the previous knowledge acquired on the first model, so the overall time of `r mod_train_time[[1]][3]+mod_train_time[[2]][3]`s is `r round(mod_train_time[[2]][3]*100/mod_train_time[[1]][3],2)`% slower than the first model. Let's see how it performs with the out of sample test.
+
+```{r prediction2, cache=TRUE}
+mod_pred_time[[2]] <- system.time(pred[[2]] <- predict(mod[[2]], newdata=test[[2]][, c(newfeatures, "classe")]))
 mod_pred_time[[2]]
 confMat[[2]] <- confusionMatrix(pred[[2]], test[[2]]$classe)
 confMat[[2]] 
@@ -190,36 +205,34 @@ confMat[[2]]
 accuracy[[2]] <- confMat[[2]]$overall[1]
 accuracy[[2]]
 
-confusion <- as.data.frame(confMat[[2]]$table)
+confusion[[2]] <- as.data.frame(confMat[[2]]$table)
  
-p2 <- ggplot(confusion, aes(Reference, Prediction, group=Prediction)) +
+p2 <- ggplot(confusion[[2]], aes(Reference, Prediction, group=Prediction)) +
         ggtitle("Confusion Matrix Model 2") +
         geom_tile(aes(fill = Freq)) + 
-        geom_text(aes(fill = confusion$Freq, label = confusion$Freq)) +
+        geom_text(aes(fill = Freq, label = Freq)) +
         scale_fill_gradient(low = "white", high = "blue") 
-
-pred_time_diff12 <- round((mod_pred_time[[1]][3]-mod_pred_time[[2]][3])*100/mod_pred_time[[1]][3],2)
 
 accuracy_diff12 <- round((accuracy[[1]]-accuracy[[2]])*100/accuracy[[1]],2)
 
 ```
 
-This model is `r pred_time_diff12`% faster at predicting than model 1 and `r accuracy_diff12`% less accurate. Significantly faster with a slight loss of accuracy.
+This model does not predict faster than model 1, or it is within the measuring error. It is `r accuracy_diff12`% less accurate. Significantly slower to train, no measureable performance improvement with a slight loss of accuracy.
 
 #### Random forest with all predictors
 For this third model we will include the *user_name* feature as a predictor
 
-```{r cache=TRUE}
+```{r model3, cache=TRUE}
 set.seed(211069)
-
 mod_train_time[[3]] <- system.time(mod[[3]] <- train(classe ~ ., data=train[[3]], 
                                            method="rf", 
                                            trControl=trainControl(method = "cv", number = 3)))
 mod_train_time[[3]]
 ```
 
+The training time of `r mod_train_time[[3]][3]`s is `r round((mod_train_time[[3]][3]-mod_train_time[[1]][3])*100/mod_train_time[[1]][3],2)`% slower than the first model. Let's see how it performs with the out of sample test.
 
-``` {r cache=TRUE}
+``` {r prediction3, cache=TRUE}
 mod_pred_time[[3]] <- system.time(pred[[3]] <- predict(mod[[3]], newdata=test[[3]]))
 mod_pred_time[[3]]
 
@@ -230,12 +243,12 @@ confMat[[3]]
 accuracy[[3]] <- confMat[[3]]$overall[1]
 accuracy[[3]]
 
-confusion <- as.data.frame(confMat[[3]]$table)
+confusion[[3]] <- as.data.frame(confMat[[3]]$table)
  
-p3 <- ggplot(confusion, aes(Reference, Prediction, group=Prediction)) +
+p3 <- ggplot(confusion[[3]], aes(Reference, Prediction, group=Prediction)) +
         ggtitle("Confusion Matrix Model 3") +
         geom_tile(aes(fill = Freq)) + 
-        geom_text(aes(fill = confusion$Freq, label = confusion$Freq)) +
+        geom_text(aes(fill = Freq, label = Freq)) +
         scale_fill_gradient(low = "white", high = "blue") 
 
 pred_time_diff13 <- round((mod_pred_time[[3]][3]-mod_pred_time[[1]][3])*100/mod_pred_time[[1]][3],2)
@@ -244,9 +257,9 @@ accuracy_diff13 <- round((accuracy[[3]]-accuracy[[1]])*100/accuracy[[1]],2)
 
 ```
 
-As expected this model is more accurate than model 1, but only by `accuracy_diff13`% and it takes `pred_time_diff13`% more time to predict. And because of the added feature it also takes longer to train. Figure below shows plots for the three confusion matrices.
+As expected this model is more accurate than model 1, but only by `r accuracy_diff13`% and no measureable penalty time to predict. And because of the added feature it also takes longer to train. Figure below shows plots for the three confusion matrices.
 
-```{r echo=FALSE}
+```{r figure3, fig.width=10, echo=FALSE}
 p1
 p2
 p3
@@ -254,11 +267,11 @@ p3
 
 ## Conclusion
 
-Even though model 3 is the most accurate we will choose model 1 as our best performer. Model 3 does not reflect the original intent of the research, but will be submitted as the second option.
+Even though model 3 is the most accurate, it is just slight more accurate. We will choose model 1 as our best performer. Model 3 does not reflect the original intent of the research, but will be submitted as the second option.
 
 We will now predict with the original 20 test samples and generate answer files with both models
 
-```{r cache=TRUE}
+```{r answers, cache=TRUE}
 answers1 <- predict(mod[[1]], newdata = test_dat[,-1])
 answers2 <- predict(mod[[3]], newdata = test_dat[,])
 
